@@ -374,6 +374,9 @@ function liveBatchSegmentFromEl(editor, el, indexAttr) {
  * stale segment objects (or only in the DOM) and get wiped.
  */
 export function flushBatchPromptInputs(editor) {
+    // Pack import rebuilds segments from JSON; stale card textareas must not
+    // write empty drafts back over the imported prompts.
+    if (editor?._suspendPromptFlush) return;
     const list = editor?.batchList;
     if (!list) return;
     const segs = editor?.timeline?.segments;

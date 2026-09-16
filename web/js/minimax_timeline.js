@@ -3799,53 +3799,72 @@ class MiniMaxH3DirectorEditor {
         this._lastOutputWasBatchFixed = false;
         this._legacyFrames = [];
         this._clearPreviewVideos?.(true);
-        const taskType = widgets.task_type || widgets.taskType || data.global?.taskType || "";
-        if (this.taskTypeWidget && taskType) this.taskTypeWidget.value = taskType;
-        if (this.globalTask && taskType) this.globalTask.value = taskType;
-        for (const name of ["steps", "sampler", "scheduler", "cfg", "shift_video", "shift_audio", "seed"]) {
-            if (widgets[name] == null || widgets[name] === "") continue;
-            const w = this.widget(name);
-            if (w) w.value = widgets[name];
+        // Drop live card/token-editor drafts *before* parse/normalize/commit.
+        // Otherwise flushBatchPromptInputs writes the previous empty 提示词
+        // over the imported segment prompts (same ids on re-import).
+        this._suspendPromptFlush = true;
+        try {
+            if (this.batchList) {
+                teardownPromptImageMentions(this.batchList);
+                this.batchList.innerHTML = "";
+            }
+            const taskType = widgets.task_type || widgets.taskType || data.global?.taskType || "";
+            if (this.taskTypeWidget && taskType) this.taskTypeWidget.value = taskType;
+            if (this.globalTask && taskType) this.globalTask.value = taskType;
+            for (const name of ["steps", "sampler", "scheduler", "cfg", "shift_video", "shift_audio", "seed"]) {
+                if (widgets[name] == null || widgets[name] === "") continue;
+                const w = this.widget(name);
+                if (w) w.value = widgets[name];
+            }
+            const out = data.output && typeof data.output === "object" ? data.output : {};
+            if (this.widthWidget && out.width) this.widthWidget.value = out.width;
+            if (this.heightWidget && out.height) this.heightWidget.value = out.height;
+            if (this.frameRateWidget && (data.frameRate || out.frameRate)) {
+                this.frameRateWidget.value = data.frameRate || out.frameRate;
+            }
+            if (this.refMaxWidget && (data.refMaxSize || out.longEdge)) {
+                this.refMaxWidget.value = data.refMaxSize || out.longEdge;
+            }
+            if (this.timelineWidget) this.timelineWidget.value = JSON.stringify(data);
+            const initTotal = Math.max(0, parseInt(this.totalFramesWidget?.value || data.totalFrames || 124, 10));
+            const initFps = coerceTimelineFps(this.frameRateWidget?.value || data.frameRate || 24);
+            this.timeline = parseTimeline(this.timelineWidget?.value, initTotal, initFps);
+            const importedGlobalPrompt = this.timeline.global?.prompt ?? "";
+            if (this.globalPromptWidget) this.globalPromptWidget.value = importedGlobalPrompt;
+            if (this.globalPrompt) {
+                this.globalPrompt.value = importedGlobalPrompt;
+                this.globalPrompt.__bdTokenApi?.hydrateFromValue?.(importedGlobalPrompt);
+            }
+            this.syncFrameRateUI?.(this.timeline.frameRate);
+            this._directorMode = this.getDirectorMode();
+            this._taskKey = resolveTaskKey(this.taskTypeWidget?.value || taskType);
+            if (this._directorMode === "video") {
+                this.restoreVideoFromTimeline();
+            } else if (this._directorMode === "prompt_batch" || this._directorMode === "image_batch") {
+                ensureImageBatchTimeline(this);
+            } else if (this._directorMode === "fl2v") {
+                ensureFl2vTimeline(this);
+            } else {
+                this.ensureGenTimeline();
+            }
+            this.applyTaskLayout(this._directorMode);
+            this.populateTaskSelect(this.globalTask, this.taskTypeWidget?.value);
+            this.setEditMode(this.timeline.editMode || "global");
+            this.selectedIndex = 0;
+            this.updateSelectionUI();
+            if (this.globalPrompt) {
+                this.globalPrompt.value = this.timeline.global?.prompt || "";
+                this.globalPrompt.__bdTokenApi?.hydrateFromValue?.(this.globalPrompt.value);
+            }
+            this.commit(true, { syncTimeline: true });
+            snapshotDirectorSampleWidgets(this.node, { force: true, includeHidden: true });
+            this._externalGroupsSyncSig = null;
+            this.syncExternalGroupsTimeline?.();
+            this.scheduleSettleRender?.();
+            this.updateDomWidgetHeight?.();
+        } finally {
+            this._suspendPromptFlush = false;
         }
-        const out = data.output && typeof data.output === "object" ? data.output : {};
-        if (this.widthWidget && out.width) this.widthWidget.value = out.width;
-        if (this.heightWidget && out.height) this.heightWidget.value = out.height;
-        if (this.frameRateWidget && (data.frameRate || out.frameRate)) {
-            this.frameRateWidget.value = data.frameRate || out.frameRate;
-        }
-        if (this.refMaxWidget && (data.refMaxSize || out.longEdge)) {
-            this.refMaxWidget.value = data.refMaxSize || out.longEdge;
-        }
-        if (this.globalPromptWidget && data.global?.prompt != null) {
-            this.globalPromptWidget.value = data.global.prompt;
-        }
-        if (this.timelineWidget) this.timelineWidget.value = JSON.stringify(data);
-        const initTotal = Math.max(0, parseInt(this.totalFramesWidget?.value || data.totalFrames || 124, 10));
-        const initFps = coerceTimelineFps(this.frameRateWidget?.value || data.frameRate || 24);
-        this.timeline = parseTimeline(this.timelineWidget?.value, initTotal, initFps);
-        this.syncFrameRateUI?.(this.timeline.frameRate);
-        this._directorMode = this.getDirectorMode();
-        this._taskKey = resolveTaskKey(this.taskTypeWidget?.value || taskType);
-        if (this._directorMode === "video") {
-            this.restoreVideoFromTimeline();
-        } else if (this._directorMode === "prompt_batch" || this._directorMode === "image_batch") {
-            ensureImageBatchTimeline(this);
-        } else if (this._directorMode === "fl2v") {
-            ensureFl2vTimeline(this);
-        } else {
-            this.ensureGenTimeline();
-        }
-        this.applyTaskLayout(this._directorMode);
-        this.populateTaskSelect(this.globalTask, this.taskTypeWidget?.value);
-        this.setEditMode(this.timeline.editMode || "global");
-        this.selectedIndex = 0;
-        this.updateSelectionUI();
-        this.commit(true, { syncTimeline: true });
-        snapshotDirectorSampleWidgets(this.node, { force: true, includeHidden: true });
-        this._externalGroupsSyncSig = null;
-        this.syncExternalGroupsTimeline?.();
-        this.scheduleSettleRender?.();
-        this.updateDomWidgetHeight?.();
     }
 
     _videoIdentityFromParts(video, clips) {
