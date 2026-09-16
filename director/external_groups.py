@@ -47,6 +47,8 @@ WITNESS_FACETS = ("wiring", "prompt", "length", "media", "other", "timeline")
 # Group records are capped frontend-side too; this only guards against a hand
 # crafted payload.
 _WITNESS_MAX_GROUPS = 256
+# Must match web/js/minimax_external_witness.js (UTF-16 FNV-1a + long-string collapse).
+_STABLE_STR_MAX = 400
 
 
 def _normalize_witness_facets(raw: Any) -> dict[str, str] | None:
@@ -59,6 +61,76 @@ def _normalize_witness_facets(raw: Any) -> dict[str, str] | None:
             continue
         facets[name] = str(value).strip()[:_WITNESS_STR_MAX]
     return facets or None
+
+
+def _digest32(text: str) -> str:
+    """Byte-identical to the frontend ``digest32`` (UTF-16 code units, FNV-1a)."""
+    h = 0x811C9DC5
+    for ch in str(text or ""):
+        code = ord(ch)
+        units = (code,)
+        if code > 0xFFFF:
+            c = code - 0x10000
+            units = (0xD800 + (c >> 10), 0xDC00 + (c & 0x3FF))
+        for unit in units:
+            h ^= unit & 0xFF
+            h = (h * 0x01000193) & 0xFFFFFFFF
+            h ^= (unit >> 8) & 0xFF
+            h = (h * 0x01000193) & 0xFFFFFFFF
+    return f"{h:08x}"
+
+
+def witness_prompt_digest(prompt: str) -> str:
+    """Same digest the cache panel stores on each group's ``prompt`` field."""
+    import json
+
+    raw = str(prompt or "")
+    value = raw if len(raw) <= _STABLE_STR_MAX else f"#{len(raw)}:{_digest32(raw)}"
+    return _digest32(json.dumps(value, ensure_ascii=False))
+
+
+def execute_group_record(index: int, group: dict[str, Any] | None) -> dict[str, Any]:
+    """Identity written into first-pass cache when the frontend witness is missing."""
+    g = group if isinstance(group, dict) else {}
+    try:
+        dur = round(float(g.get("duration_sec") or 0), 6)
+    except (TypeError, ValueError):
+        dur = None
+    return {
+        "slot": f"group_{int(index)}",
+        "node": "",
+        "prompt": witness_prompt_digest(g.get("prompt") or ""),
+        "sub": "",
+        "dur": dur if dur and dur > 0 else None,
+    }
+
+
+def stamp_execute_group_records(
+    witness: dict[str, Any] | None,
+    groups: list[dict[str, Any]],
+    *,
+    family: str,
+) -> dict[str, Any]:
+    """Keep frontend per-group records when present; otherwise stamp from payloads."""
+    out = dict(witness) if isinstance(witness, dict) else {
+        "v": 4,
+        "graph": "execute",
+        "port": str(family or ""),
+        "source": "",
+        "nodes": 0,
+        "timeline": "",
+    }
+    records = out.get("groups")
+    if isinstance(records, list) and len(records) == len(groups):
+        out["groups"] = [
+            normalize_external_group_record(item) or execute_group_record(i, groups[i])
+            for i, item in enumerate(records)
+        ]
+    else:
+        out["groups"] = [execute_group_record(i, g) for i, g in enumerate(groups)]
+        if not out.get("graph"):
+            out["graph"] = "execute"
+    return out
 
 
 def normalize_external_group_record(raw: Any) -> dict[str, Any] | None:
@@ -249,10 +321,31 @@ def pack_i2v_group(
     }
 
 
+def _normalize_packed_ref_image_size(value) -> str:
+    from .plan import normalize_ref_image_size
+
+    return normalize_ref_image_size(value)
+
+
+def _resolve_group_ref_image_size(group, row, timeline) -> str:
+    """Group widget wins; fall back to the Director card / output default."""
+    from .plan import resolve_ref_image_size
+
+    raw = None
+    if isinstance(group, dict):
+        raw = group.get("ref_image_size")
+        if raw is None:
+            raw = group.get("refImageSize")
+    if raw is not None and str(raw).strip() != "":
+        return resolve_ref_image_size({"ref_image_size": raw}, timeline)
+    return resolve_ref_image_size(row, timeline)
+
+
 def pack_r2v_group(
     *,
     prompt: str = "",
     duration_sec: float = DEFAULT_FL2V_DURATION_SEC,
+    ref_image_size: str = "match",
     ref_images: dict[int, Any] | None = None,
     ref_videos: dict[int, Any] | None = None,
     ref_video_audios: dict[int, Any] | None = None,
@@ -306,6 +399,7 @@ def pack_r2v_group(
         "kind": "r2v",
         "prompt": (prompt or "").strip(),
         "duration_sec": float(duration_sec) if duration_sec is not None else DEFAULT_FL2V_DURATION_SEC,
+        "ref_image_size": _normalize_packed_ref_image_size(ref_image_size),
         "first_frame": None,
         "last_frame": None,
         "ref_images": images,
@@ -510,7 +604,6 @@ def build_plan_from_external_groups(
         merge_indexed_refs,
         drop_unusable_audio_prompt_tags,
         reinforce_r2v_prompt,
-        resolve_ref_image_size,
         usable_ref_audio_indices,
     )
 
@@ -659,7 +752,7 @@ def build_plan_from_external_groups(
                     continuity_from_prev=resolve_segment_continuity_from_prev(
                         row, segment_index=plan_idx
                     ),
-                    ref_image_size=resolve_ref_image_size(row, timeline),
+                    ref_image_size=_resolve_group_ref_image_size(g, row, timeline),
                 )
             )
         else:
@@ -729,7 +822,7 @@ def build_plan_from_external_groups(
                     continuity_from_prev=resolve_segment_continuity_from_prev(
                         row, segment_index=plan_idx
                     ),
-                    ref_image_size=resolve_ref_image_size(row, timeline),
+                    ref_image_size=_resolve_group_ref_image_size(g, row, timeline),
                 )
             )
 
@@ -792,7 +885,12 @@ def build_plan_from_external_groups(
         continuity_keep_tail=continuity_keep_tail,
         global_ref_audios=list(common_audios_raw) if family == "r2v" else [],
     )
-    # Stamp the wiring witness so the first-pass cache records which graph
-    # produced these segments (the cache-status panel compares against it).
-    plan.external_groups_witness = external_witness_from_timeline(timeline)
+    # Prefer the frontend wiring witness (same blob the cache panel sends).
+    # If Queue serialized timeline_data without it, stamp per-group records from
+    # the executed payloads so .pre meta always carries ``external_group``.
+    plan.external_groups_witness = stamp_execute_group_records(
+        external_witness_from_timeline(timeline),
+        groups,
+        family=family,
+    )
     return plan

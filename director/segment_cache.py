@@ -67,6 +67,18 @@ def has_external_marker(stored: Any) -> bool:
     return EXTERNAL_SEGMENT_FP_KEY in stored
 
 
+def _plan_uses_external_groups(plan: DirectorPlan | None) -> bool:
+    if plan is None:
+        return False
+    if isinstance(getattr(plan, "external_groups_witness", None), dict):
+        return True
+    raw = getattr(plan, "raw", None)
+    if not isinstance(raw, dict):
+        return False
+    ext = raw.get("externalGroups")
+    return isinstance(ext, dict) and bool(ext.get("active"))
+
+
 def source_video_identity(plan: DirectorPlan) -> list[str]:
     """Stable source-clip identity: relative path + size + mtime (overwrite-safe)."""
     from ..lib.video_io import resolve_video_path, video_clips_from_timeline
@@ -829,12 +841,19 @@ def load_first_pass_cache(
     try:
         stored = json.loads(meta_path.read_text(encoding="utf-8"))
         expected = first_pass_cache_fingerprint(seg, plan)
-        if not isinstance(stored, dict) or stored != expected:
+        missing_external = (
+            isinstance(stored, dict)
+            and _plan_uses_external_groups(plan)
+            and not has_external_marker(stored)
+        )
+        if not isinstance(stored, dict) or stored != expected or missing_external:
             if isinstance(stored, dict) and _reject_source_stale(
                 stored, expected, seg_index=idx, quiet=True,
             ):
                 return None
             diff = _fingerprint_diff_keys(stored, expected) if isinstance(stored, dict) else ["<invalid-meta>"]
+            if missing_external and "<unverified-external>" not in diff:
+                diff = ["<unverified-external>", *diff]
             log.info(
                 "Segment %d first-pass cache miss (diff=%s); will sample first pass.",
                 idx + 1,
@@ -1068,14 +1087,19 @@ def _external_segment_diff(stored_record: Any, expected_record: Any) -> list[str
         keys.append("external_length")
     stored_facets = stored_record.get("facets")
     expected_facets = expected_record.get("facets")
-    for facet, diff_key in _WITNESS_FACET_DIFF_KEYS.items():
-        if facet == "timeline" or diff_key in keys:
-            continue
-        if not isinstance(stored_facets, dict) or not isinstance(expected_facets, dict):
-            continue
-        if stored_facets.get(facet) != expected_facets.get(facet):
-            keys.append(diff_key)
-    return keys or ["external_wiring"]
+    # Execute fallback records have no graph facets. Comparing them to the
+    # panel's full witness would report every segment as「外接组接线」forever.
+    if isinstance(stored_facets, dict) and stored_facets and isinstance(expected_facets, dict):
+        for facet, diff_key in _WITNESS_FACET_DIFF_KEYS.items():
+            if facet == "timeline" or diff_key in keys:
+                continue
+            if stored_facets.get(facet) != expected_facets.get(facet):
+                keys.append(diff_key)
+    stored_sub = stored_record.get("sub")
+    if stored_sub and stored_sub != expected_record.get("sub") and "external_wiring" not in keys:
+        if "external_media" not in keys and "external_other" not in keys:
+            keys.append("external_wiring")
+    return keys
 
 
 def _count_final_segment_files(root: Path) -> int:
@@ -1207,6 +1231,7 @@ def _inspect_external_group_cache(
             # checked, and the run re-samples this segment once.
             status = "unverified"
             unverified += 1
+            diff = ["<unverified-external>"]
         else:
             diff = [
                 key for key, value in expected_knobs.items() if stored.get(key) != value

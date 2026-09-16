@@ -468,9 +468,20 @@ function timelineSelection(timeline) {
  */
 export function attachExternalGroupsWitness(node, timeline) {
     if (!timeline || typeof timeline !== "object") return timeline;
-    delete timeline[EXTERNAL_WITNESS_KEY];
+    const previous = timeline[EXTERNAL_WITNESS_KEY];
+    // Disconnected group input must drop a stale witness so a UI-timeline run
+    // is never compared as an external-group cache.
+    if (!connectedGroupPort(node)) {
+        delete timeline[EXTERNAL_WITNESS_KEY];
+        return timeline;
+    }
     const witness = buildExternalGroupsWitness(node);
-    if (!witness) return timeline;
+    // Do not drop a good witness if this serialize pass cannot rebuild one
+    // (queue-time graph walks occasionally see empty inputs).
+    if (!witness) {
+        if (!previous) delete timeline[EXTERNAL_WITNESS_KEY];
+        return timeline;
+    }
     witness.timeline = digest32(stableStringify(timelineProjection(timeline)));
     if (witness.facets) witness.facets.timeline = witness.timeline;
     // Segment lengths are derived from the group durations at the same fps the

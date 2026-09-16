@@ -288,6 +288,7 @@ const CACHE_DIFF_LABELS = {
     external_media: "外接组参考素材",
     external_other: "外接组其他参数",
     external_groups_off: "外接组（缓存写入后接线已断开）",
+    "<unverified-external>": "未记录外接组（旧版写入）",
 };
 
 function diffLabel(key) {
