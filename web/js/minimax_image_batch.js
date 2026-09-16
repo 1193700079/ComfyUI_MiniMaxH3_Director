@@ -2632,15 +2632,20 @@ function appendBatchCard(list, editor, seg, index, ctx) {
                 if (opt === curSize) o.selected = true;
                 sizeSel.appendChild(o);
             }
-            sizeSel.onchange = (e) => {
-                e.stopPropagation();
-                const liveIdx = (editor.timeline.segments || []).findIndex((s) => s?.id && s.id === seg.id);
-                const live = editor.timeline.segments?.[liveIdx >= 0 ? liveIdx : index];
-                if (!live) return;
-                live.refImageSize = resolveSegmentRefImageSize({ refImageSize: sizeSel.value });
-                editor.commit?.(false, { syncTimeline: true });
-                editor.flushTimelineSync?.();
-            };
+            if (externalLocked) {
+                sizeSel.disabled = true;
+                sizeSel.title = t("external.refImageSizeLocked");
+            } else {
+                sizeSel.onchange = (e) => {
+                    e.stopPropagation();
+                    const liveIdx = (editor.timeline.segments || []).findIndex((s) => s?.id && s.id === seg.id);
+                    const live = editor.timeline.segments?.[liveIdx >= 0 ? liveIdx : index];
+                    if (!live) return;
+                    live.refImageSize = resolveSegmentRefImageSize({ refImageSize: sizeSel.value });
+                    editor.commit?.(false, { syncTimeline: true });
+                    editor.flushTimelineSync?.();
+                };
+            }
             sizeSel.onclick = (e) => e.stopPropagation();
             sizeRow.appendChild(sizeLabel);
             sizeRow.appendChild(sizeSel);

@@ -2263,6 +2263,7 @@ class MiniMaxH3DirectorEditor {
             s.nodeId ?? "",
             Number(s.durationSec) || 0,
             s.prompt || "",
+            s.refImageSize || "",
             s.firstImageFile || "",
             s.lastImageFile || "",
             (s.refImages || []).map((r) => `${r.index}:${r.imageFile || ""}`).join(","),
@@ -2398,7 +2399,9 @@ class MiniMaxH3DirectorEditor {
                     previewB64: matched?.previewB64 || "",
                     previewFrames: matched?.previewFrames || [],
                     previewFps: matched?.previewFps,
-                    refImageSize: matched?.refImageSize ?? matched?.ref_image_size,
+                    refImageSize: spec.refImageSize
+                        ? resolveSegmentRefImageSize({ refImageSize: spec.refImageSize })
+                        : resolveSegmentRefImageSize(matched, this.timeline?.output),
                     ...(matched?.runEnabled != null ? { runEnabled: matched.runEnabled } : {}),
                 });
             });
@@ -12443,6 +12446,8 @@ function collectAutogrowSlotRefs(graph, node, prefix, resolvePath, toRef, patchS
 function readExternalGroupSpec(node, graph = null) {
     const g = graph || app.graph || app.canvas?.graph;
     const durRaw = Number(nodeWidgetValue(node, "duration_sec"));
+    const sizeRaw = nodeWidgetValue(node, "ref_image_size")
+        ?? nodeWidgetValue(node, "refImageSize");
     const prompt = resolveExternalGroupPrompt(g, node);
     const cls = node?.comfyClass || node?.type || "";
     const firstImageFile = resolveLinkedImageFile(g, node, "first_frame");
@@ -12494,6 +12499,9 @@ function readExternalGroupSpec(node, graph = null) {
     return {
         nodeId: node?.id ?? null,
         durationSec: Number.isFinite(durRaw) && durRaw > 0 ? durRaw : null,
+        refImageSize: sizeRaw != null && String(sizeRaw).trim() !== ""
+            ? normalizeRefImageSize(sizeRaw)
+            : "",
         prompt,
         firstImageFile,
         lastImageFile,
@@ -12908,7 +12916,8 @@ app.registerExtension({
                 // new value is already readable when the card re-reads the group.
                 // `_mmxSkipExternalSync` marks a Director→Group write-through: that
                 // path already synced, so echoing it back would be a wasted round.
-                if (name === "duration_sec" || name === "prompt") {
+                if (name === "duration_sec" || name === "prompt"
+                    || name === "ref_image_size" || name === "refImageSize") {
                     if (!widget?._mmxSkipExternalSync) {
                         queueMicrotask(() => notifyDirectorsSyncExternalGroups());
                     }
@@ -12921,7 +12930,8 @@ app.registerExtension({
                 // Keep Director timeline in sync when duration/prompt widgets change.
                 queueMicrotask(() => {
                     for (const w of this.widgets || []) {
-                        if (w?.name !== "duration_sec" && w?.name !== "prompt") continue;
+                        if (w?.name !== "duration_sec" && w?.name !== "prompt"
+                            && w?.name !== "ref_image_size" && w?.name !== "refImageSize") continue;
                         if (w._mmxExternalSyncPatched) continue;
                         w._mmxExternalSyncPatched = true;
                         const prev = w.callback;
