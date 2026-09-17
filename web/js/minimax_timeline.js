@@ -492,6 +492,7 @@ const HIDDEN_WIDGETS = [
     "timeline_data", "total_frames", "width", "height", "ref_max_size",
     "task_type", "global_prompt", "frame_rate", "cfg",
     "export_source_images",
+    "export_pre_face_refine",
     // seed stays visible under 采样设置 (with control_after_generate)
 ];
 
@@ -499,7 +500,9 @@ const DIRECTOR_WIDGET_LABEL_KEYS = {
     seed: "widget.seed",
     clear_vram_between_segments: "widget.clearVram",
     clear_vram_before_refine: "widget.clearVramBeforeRefine",
+    clear_vram_before_face_refine: "widget.clearVramBeforeFaceRefine",
     export_source_images: "widget.exportSourceImages",
+    export_pre_face_refine: "widget.exportPreFaceRefine",
     control_after_generate: "widget.controlAfterGenerate",
     "control after generate": "widget.controlAfterGenerate",
 };
@@ -507,13 +510,18 @@ const DIRECTOR_WIDGET_LABEL_KEYS = {
 const DIRECTOR_WIDGET_TOOLTIP_KEYS = {
     clear_vram_between_segments: "widget.tooltip.clearVram",
     clear_vram_before_refine: "widget.tooltip.clearVramBeforeRefine",
+    clear_vram_before_face_refine: "widget.tooltip.clearVramBeforeFaceRefine",
     export_source_images: "widget.tooltip.exportSourceImages",
+    export_pre_face_refine: "widget.tooltip.exportPreFaceRefine",
 };
 
 const DIRECTOR_GROUP_LABEL_KEYS = {
     bd_grp_sample: "widget.grpSample",
     bd_grp_advanced: "widget.grpAdvanced",
     bd_grp_perf: "widget.grpPerf",
+    bd_grp_face_detect: "widget.grpFaceDetect",
+    bd_grp_face_sample: "widget.grpSample",
+    bd_grp_face_paste: "widget.grpFacePaste",
 };
 
 function widgetByName(node, name) {
@@ -1033,9 +1041,11 @@ const STYLES = `
 .bd-canvas.bd-grab{cursor:grab}
 .bd-canvas.bd-grabbing{cursor:grabbing}
 .bd-output{width:100%;box-sizing:border-box;display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:6px 8px;background:#1e1e1e;border:1px solid #333;border-radius:6px}
-.bd-out-audio-wrap,.bd-out-source-wrap{display:inline-flex;align-items:center;gap:6px}
-.bd-out-source-wrap.hidden{display:none}
-.bd-output .bd-out-source-wrap label{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
+.bd-out-audio-wrap,.bd-out-source-wrap,.bd-out-preface-wrap{display:inline-flex;align-items:center;gap:6px}
+.bd-out-source-wrap.hidden,.bd-out-preface-wrap.hidden{display:none}
+.bd-output .bd-out-source-wrap label,.bd-output .bd-out-preface-wrap label{display:inline-flex;align-items:center;gap:4px;margin:0;cursor:pointer;line-height:1}
+.bd-output .bd-out-source-wrap input[type=checkbox],.bd-output .bd-out-preface-wrap input[type=checkbox]{margin:0;width:13px;height:13px;flex:0 0 auto;align-self:center;accent-color:#4fff8f}
+.bd-output .bd-out-source-wrap label span,.bd-output .bd-out-preface-wrap label span{line-height:1.2;display:inline-block}
 .bd-split{display:block;width:100%;box-sizing:border-box;min-width:0}
 .bd-r2v-common-hint{margin:0 0 8px;font-size:11px;line-height:1.4;color:#9ab;opacity:.95}
 .bd-panel.bd-r2v-common-panel{border:1px solid #3a4a5a;background:linear-gradient(180deg,#1a222c 0%,#151a20 100%)}
@@ -1639,6 +1649,7 @@ const PERF_WIDGET_ORDER = [
     "bd_grp_perf",
     "clear_vram_between_segments",
     "clear_vram_before_refine",
+    "clear_vram_before_face_refine",
 ];
 
 function moveDirectorPerfWidgetsBeforeTimeline(node) {
@@ -1899,6 +1910,7 @@ function parseTimeline(raw, totalFrames, fps) {
             maxExportFrames: 0, exportMode: "all",
             audioMode: "generate",
             exportSourceImages: false,
+            exportPreFaceRefine: false,
             refImageSize: "match",
             continuityEnabled: false, continuityOverlapFrames: DEFAULT_CONTINUITY_FRAMES,
             continuityMode: DEFAULT_CONTINUITY_MODE,
@@ -1967,6 +1979,8 @@ function parseTimeline(raw, totalFrames, fps) {
             audioMode: normalizeAudioMode(data.output?.audioMode ?? data.output?.audio_mode),
             exportSourceImages: data.output?.exportSourceImages === true
                 || data.output?.export_source_images === true,
+            exportPreFaceRefine: data.output?.exportPreFaceRefine === true
+                || data.output?.export_pre_face_refine === true,
             refImageSize: normalizeRefImageSize(data.output?.refImageSize ?? data.output?.ref_image_size),
             continuityEnabled: data.output?.continuityEnabled ?? data.output?.continuity_enabled,
             continuityOverlapFrames: data.output?.continuityOverlapFrames ?? data.output?.continuity_overlap_frames,
@@ -2920,6 +2934,12 @@ class MiniMaxH3DirectorEditor {
                     <span data-i18n="output.exportSourceImages">输出原片</span>
                 </label>
             </span>
+            <span class="bd-out-preface-wrap" data-r="out-preface-wrap" data-i18n-title="widget.tooltip.exportPreFaceRefine">
+                <label>
+                    <input type="checkbox" data-r="out-export-preface">
+                    <span data-i18n="output.exportPreFaceRefine">输出修脸前</span>
+                </label>
+            </span>
             <span class="bd-meta" data-r="out-preview">—</span>
             <span class="bd-meta hidden" data-r="out-hint"></span>
             <label data-i18n="output.exportMode.label" data-i18n-title="tooltip.exportMode">导出方式</label>
@@ -3258,6 +3278,8 @@ class MiniMaxH3DirectorEditor {
         this.outAudioMode = this.root.querySelector('[data-r="out-audio-mode"]');
         this.exportSourceImagesWrap = this.root.querySelector('[data-r="out-source-wrap"]');
         this.exportSourceImagesCb = this.root.querySelector('[data-r="out-export-source"]');
+        this.exportPreFaceRefineWrap = this.root.querySelector('[data-r="out-preface-wrap"]');
+        this.exportPreFaceRefineCb = this.root.querySelector('[data-r="out-export-preface"]');
         this.outMaxFrames = this.root.querySelector('[data-r="out-max-frames"]');
         this.outExportMode = this.root.querySelector('[data-r="out-export-mode"]');
         this.segmentContinuityWrap = this.root.querySelector('[data-r="segment-continuity-wrap"]');
@@ -3542,6 +3564,15 @@ class MiniMaxH3DirectorEditor {
                 this.timeline.output.exportSourceImages = !!this.exportSourceImagesCb.checked;
                 const w = this.widget("export_source_images");
                 if (w) w.value = this.timeline.output.exportSourceImages;
+                this.commit(true);
+            };
+        }
+        if (this.exportPreFaceRefineCb) {
+            this.exportPreFaceRefineCb.onchange = () => {
+                this.timeline.output = this.timeline.output || {};
+                this.timeline.output.exportPreFaceRefine = !!this.exportPreFaceRefineCb.checked;
+                const w = this.widget("export_pre_face_refine");
+                if (w) w.value = this.timeline.output.exportPreFaceRefine;
                 this.commit(true);
             };
         }
@@ -6243,6 +6274,7 @@ class MiniMaxH3DirectorEditor {
         this.updateOutputModeUI();
         this.updateSegmentContinuityUI();
         this.syncExportSourceImagesUI();
+        this.syncExportPreFaceRefineUI();
         this.updateOutputPreview();
     }
 
@@ -6256,6 +6288,17 @@ class MiniMaxH3DirectorEditor {
         }
         const on = show && !!this.timeline.output.exportSourceImages;
         if (this.exportSourceImagesCb) this.exportSourceImagesCb.checked = on;
+        if (w) w.value = on;
+    }
+
+    syncExportPreFaceRefineUI() {
+        this.timeline.output = this.timeline.output || {};
+        const w = this.widget("export_pre_face_refine");
+        if (this.timeline.output.exportPreFaceRefine == null && w?.value) {
+            this.timeline.output.exportPreFaceRefine = true;
+        }
+        const on = !!this.timeline.output.exportPreFaceRefine;
+        if (this.exportPreFaceRefineCb) this.exportPreFaceRefineCb.checked = on;
         if (w) w.value = on;
     }
 
@@ -6734,6 +6777,13 @@ class MiniMaxH3DirectorEditor {
         if (exportSrcW) {
             exportSrcW.value = isVideoEditTaskKey(this.getTaskKey())
                 && !!this.timeline.output.exportSourceImages;
+        }
+        if (this.exportPreFaceRefineCb) {
+            this.timeline.output.exportPreFaceRefine = !!this.exportPreFaceRefineCb.checked;
+        }
+        const exportPreFaceW = this.widget("export_pre_face_refine");
+        if (exportPreFaceW) {
+            exportPreFaceW.value = !!this.timeline.output.exportPreFaceRefine;
         }
         // Sync from DOM when task+segments are eligible — do not rely on CSS
         // "hidden" class (can lag behind equal-split / task changes at queue time).

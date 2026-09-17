@@ -290,6 +290,7 @@ class DirectorPlan:
     # freed when the run ends (replaces the old never-cleared process cache).
     audio_decode_cache: dict = field(default_factory=dict, repr=False)
     refine: dict | None = None
+    face_refine: dict | None = None
     # Sampling knobs stamped at execute time (first-pass cache fingerprint).
     sample_seed: int = 0
     sample_cfg: float = 1.0
@@ -1085,6 +1086,14 @@ def plan_summary(plan: DirectorPlan) -> str:
             refine_line = None
         if refine_line:
             lines.append(refine_line)
+        try:
+            from .face_refine.pack import face_refine_report_line
+
+            face_line = face_refine_report_line(plan)
+        except Exception:
+            face_line = None
+        if face_line:
+            lines.append(face_line)
         if plan.continuity_enabled:
             pinned = [
                 seg.index + 1
@@ -1184,6 +1193,14 @@ def plan_summary(plan: DirectorPlan) -> str:
         refine_line = None
     if refine_line:
         lines.append(refine_line)
+    try:
+        from .face_refine.pack import face_refine_report_line
+
+        face_line = face_refine_report_line(plan)
+    except Exception:
+        face_line = None
+    if face_line:
+        lines.append(face_line)
     if plan.run_indices is not None:
         selected = sorted(plan.run_indices)
         skipped = [i + 1 for i in range(plan.segment_count) if i not in plan.run_indices]

@@ -271,6 +271,9 @@ def segment_cache_fingerprint(seg: SegmentPlan, plan: DirectorPlan) -> dict[str,
     from .refine_pack import refine_fingerprint
 
     fp.update(refine_fingerprint(plan))
+    from .face_refine.pack import face_refine_fingerprint
+
+    fp.update(face_refine_fingerprint(plan))
     return fp
 
 
