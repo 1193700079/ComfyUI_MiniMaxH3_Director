@@ -8,6 +8,7 @@ import {
     snapResolutionDim,
 } from "./minimax_gen_timeline.js";
 import { injectExternalGroupsWitness } from "./minimax_external_witness.js";
+import { collectSelfLiftWitness } from "./minimax_selflift.js";
 
 const REFINE_CLASS = "MiniMaxH3DirectorRefine";
 const DIRECTOR_CLASSES = new Set(["MiniMaxH3Director", "ComfyMiniMaxH3Director"]);
@@ -289,6 +290,23 @@ const CACHE_DIFF_LABELS = {
     external_other: "外接组其他参数",
     external_groups_off: "外接组（缓存写入后接线已断开）",
     "<unverified-external>": "未记录外接组（旧版写入）",
+    selflift: "SelfLift",
+    sl_split: "SelfLift 分段方式",
+    sl_high: "SelfLift 高清步数",
+    sl_trans: "SelfLift 过渡步",
+    sl_scale: "SelfLift 低清倍率",
+    sl_model: "SelfLift 3D 权重",
+    sl_samp: "SelfLift 采样器",
+    sl_carry: "SelfLift 低清承接",
+    sl_rho: "SelfLift rho",
+    sl_wmin: "SelfLift w_min",
+    sl_wmax: "SelfLift w_max",
+    sl_up: "SelfLift 插值",
+    sl_chunk: "SelfLift 时间分块",
+    sl_tile: "SelfLift 空间分块",
+    sl_tiles: "SelfLift 分块数",
+    sl_overlap: "SelfLift 分块重叠",
+    sl_hires_model: "SelfLift 高清模型",
 };
 
 function diffLabel(key) {
@@ -357,6 +375,10 @@ function cacheStatusPayload(director) {
         shift_video: Number(directorValue(director, "shift_video", 12)),
         shift_audio: Number(directorValue(director, "shift_audio", 3)),
         sigmas_linked: directorHasSigmasLink(director),
+        // SelfLift is a graph-wired pack, not a Director widget. The run writes
+        // sl_* into first-pass meta; the panel must send the same pack or it
+        // always reports those keys as diffs.
+        selflift: collectSelfLiftWitness(director),
     };
 }
 

@@ -552,6 +552,9 @@ async def minimax_first_pass_cache_status(request):
         plan.sample_sigmas_linked = bool(body.get("sigmas_linked"))
         plan.sample_shift_video = float(body.get("shift_video") or 12.0)
         plan.sample_shift_audio = float(body.get("shift_audio") or 3.0)
+        from .selflift.pack import normalize_selflift_pack
+
+        plan.selflift = normalize_selflift_pack(body.get("selflift"))
         # Graph-wired i2v_groups / r2v_groups never reach this route as values,
         # so the panel ships a witness of that wiring inside timeline_data.
         witness = external_witness_from_timeline_data(timeline_data)
