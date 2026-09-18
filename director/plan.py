@@ -290,6 +290,7 @@ class DirectorPlan:
     # freed when the run ends (replaces the old never-cleared process cache).
     audio_decode_cache: dict = field(default_factory=dict, repr=False)
     refine: dict | None = None
+    selflift: dict | None = None
     face_refine: dict | None = None
     # Sampling knobs stamped at execute time (first-pass cache fingerprint).
     sample_seed: int = 0
@@ -1077,6 +1078,14 @@ def plan_summary(plan: DirectorPlan) -> str:
             f"Output: {plan.width}×{plan.height} ({plan.output_mode})",
             f"Global task: {get_task_prompt_spec(plan.global_task_type).label}",
         ]
+        try:
+            from .selflift.pack import selflift_report_line
+
+            selflift_line = selflift_report_line(plan)
+        except Exception:
+            selflift_line = None
+        if selflift_line:
+            lines.append(selflift_line)
         refine_line = None
         try:
             from .refine_pack import refine_report_line

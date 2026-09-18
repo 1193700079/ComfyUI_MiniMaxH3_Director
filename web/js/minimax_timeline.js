@@ -522,6 +522,9 @@ const DIRECTOR_GROUP_LABEL_KEYS = {
     bd_grp_face_detect: "widget.grpFaceDetect",
     bd_grp_face_sample: "widget.grpSample",
     bd_grp_face_paste: "widget.grpFacePaste",
+    bd_grp_selflift_sample: "widget.grpSelfLiftSample",
+    bd_grp_selflift_lift: "widget.grpSelfLiftLift",
+    bd_grp_selflift_tile: "widget.grpSelfLiftTile",
 };
 
 function widgetByName(node, name) {
