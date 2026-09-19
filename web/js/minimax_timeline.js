@@ -873,7 +873,8 @@ function makeGroupHeaderWidget(inputName, inputData) {
             drawGroupHeader(ctx, node, widget_width, y, H, text);
         },
         computeSize(width) {
-            return [width, 26];
+            // DOM header is margin+padding+text (~40px). 26 clipped Vue SelfLift/Refine.
+            return [width, 38];
         },
         mouse() {
             return false;
