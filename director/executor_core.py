@@ -1647,9 +1647,12 @@ def execute_director_plan_core(
             completed_refine_passes,
         )
         if export_segments_mode:
-            # Older than the predecessor cannot be pinned anymore.
+            # Older than the predecessor cannot be pinned anymore. The last run
+            # segment is the clip the IMAGE outputs carry: this loop also walks
+            # unselected slots after it (「选择运行」), which must not poster it.
+            last_run_idx = max(run_indices) if run_indices else -1
             for stale in tuple(completed_outputs):
-                if int(stale) < int(seg.index) - 1:
+                if int(stale) < int(seg.index) - 1 and int(stale) != last_run_idx:
                     _release_segment_pixels(
                         stale,
                         completed_outputs=completed_outputs,
