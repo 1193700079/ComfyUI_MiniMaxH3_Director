@@ -780,7 +780,7 @@ def execute_director_plan_core(
 
         positive_prompt = seg.prompt
 
-        if seg.task_key == "fl2v":
+        if seg.task_key in {"fl2v", "i2v"}:
             from .fl2v_timeline import reinforce_fl2v_prompt
 
             has_start = any(getattr(r, "index", None) == 0 for r in (seg.refs or []))
@@ -789,6 +789,7 @@ def execute_director_plan_core(
                 # Legacy packs without explicit indices: [start] or [start, end].
                 has_start = True
                 has_end = len(seg.refs) >= 2
+            # Strip leftover Director hard-lock wraps; official path does not re-inject.
             positive_prompt = reinforce_fl2v_prompt(
                 positive_prompt,
                 has_end_frame=has_end,
