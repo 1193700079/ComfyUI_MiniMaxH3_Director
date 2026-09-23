@@ -61,6 +61,7 @@ from .h3_motion_context import (
     DEFAULT_AUDIO_CONTEXT_FRAMES,
     apply_motion_context,
     continuity_export_len,
+    describe_pin_window,
     generation_frame_budget,
     handoff_end_frame,
     select_continuity_pin_latent,
@@ -219,8 +220,13 @@ def _build_minimax_inputs(
         # promote clip_frames[0] into first_frame.
         if first_frame is not None and last_frame is None and clip_frames is not None:
             # Start+end endpoint hold: last may only live on the clip tail.
+            # Start-only shots hold image0 through the whole clip — a tail equal to
+            # the head is not an end keyframe; locking it makes the shot return to
+            # its first frame (and the next segment's pin inherits that).
             if clip_frames.shape[0] >= 2:
-                last_frame = clip_frames[-1:].clone()
+                tail = clip_frames[-1:]
+                if not torch.equal(tail, clip_frames[:1]):
+                    last_frame = tail.clone()
     elif task_key == "i2v":
         # Explicit per-segment image wins; motion-context path leaves first_frame empty
         # so the previous tail can be pinned as a multi-frame head instead.
@@ -1100,6 +1106,9 @@ def execute_director_plan_core(
                     )
             handoff_label = "guide+redraw" if is_continue_mode(plan) else "guide"
             task_hint = f"{task_hint} + {handoff_label} {trim_frames}f"
+            pin_note = describe_pin_window(prev_av, trim_frames, end_frame=prev_end_frame)
+            if pin_note:
+                reports.append(f"Seg #{seg.index + 1}: {pin_note}")
             remask_note = (
                 f"(redraw {float(getattr(plan, 'continuity_redraw', 0.10)):.2f}, no cond-pin) "
                 if is_continue_mode(plan)
