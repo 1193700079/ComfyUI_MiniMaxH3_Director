@@ -501,6 +501,7 @@ const DIRECTOR_WIDGET_LABEL_KEYS = {
     clear_vram_between_segments: "widget.clearVram",
     clear_vram_before_refine: "widget.clearVramBeforeRefine",
     clear_vram_before_face_refine: "widget.clearVramBeforeFaceRefine",
+    cache_frames_codec: "widget.cacheFramesCodec",
     export_source_images: "widget.exportSourceImages",
     export_pre_face_refine: "widget.exportPreFaceRefine",
     control_after_generate: "widget.controlAfterGenerate",
@@ -511,6 +512,7 @@ const DIRECTOR_WIDGET_TOOLTIP_KEYS = {
     clear_vram_between_segments: "widget.tooltip.clearVram",
     clear_vram_before_refine: "widget.tooltip.clearVramBeforeRefine",
     clear_vram_before_face_refine: "widget.tooltip.clearVramBeforeFaceRefine",
+    cache_frames_codec: "widget.tooltip.cacheFramesCodec",
     export_source_images: "widget.tooltip.exportSourceImages",
     export_pre_face_refine: "widget.tooltip.exportPreFaceRefine",
 };
@@ -1654,6 +1656,7 @@ const PERF_WIDGET_ORDER = [
     "clear_vram_between_segments",
     "clear_vram_before_refine",
     "clear_vram_before_face_refine",
+    "cache_frames_codec",
 ];
 
 function moveDirectorPerfWidgetsBeforeTimeline(node) {

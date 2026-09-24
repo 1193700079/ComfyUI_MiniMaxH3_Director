@@ -415,10 +415,46 @@ def _load_frames(root: Path, idx: int, *, first_pass: bool) -> torch.Tensor | No
 
 
 def _drop_legacy_frames(root: Path, idx: int, *, first_pass: bool) -> None:
-    """Delete the raw ``.pt`` twin once FFV1 is published (one-way migration)."""
+    """Delete the raw ``.pt`` twin once FFV1 is published."""
     legacy = _legacy_frames_path(root, idx, first_pass=first_pass)
     if legacy.is_file():
         _safe_unlink(legacy)
+
+
+def _drop_ffv1_frames(root: Path, idx: int, *, first_pass: bool) -> None:
+    """Delete the FFV1 twin once a raw ``.pt`` payload is published."""
+    path = _frames_path(root, idx, first_pass=first_pass)
+    if path.is_file():
+        _safe_unlink(path)
+
+
+def _frames_codec(plan) -> str:
+    codec = str(getattr(plan, "cache_frames_codec", "raw") or "raw").strip().lower()
+    return "ffv1" if codec == "ffv1" else "raw"
+
+
+def _store_segment_frames(
+    root: Path,
+    idx: int,
+    payload: torch.Tensor,
+    *,
+    first_pass: bool,
+    plan,
+) -> None:
+    """Write pixel frames in the plan's codec and drop the other format."""
+    if _frames_codec(plan) == "ffv1":
+        fps = float(getattr(plan, "frame_rate", 24) or 24)
+        _write_via_temp(
+            _frames_path(root, idx, first_pass=first_pass),
+            lambda p: encode_frames_ffv1(p, payload, fps=fps),
+        )
+        _drop_legacy_frames(root, idx, first_pass=first_pass)
+        return
+    _write_via_temp(
+        _legacy_frames_path(root, idx, first_pass=first_pass),
+        lambda p: torch.save(payload, p),
+    )
+    _drop_ffv1_frames(root, idx, first_pass=first_pass)
 
 
 def save_segment_cache(
@@ -447,18 +483,13 @@ def save_segment_cache(
         return
     fp = segment_cache_fingerprint(seg, plan)
     idx = seg.index
-    frames_path = _frames_path(root, idx, first_pass=False)
     meta_path = root / f"seg_{idx:04d}.meta.json"
     latent_path = root / f"seg_{idx:04d}.av.pt"
     handoff_path = root / f"seg_{idx:04d}.handoff.json"
     audio_path = root / f"seg_{idx:04d}.audio.pt"
     try:
         payload = _frames_to_disk(tensor)
-        fps = float(getattr(plan, "frame_rate", 24) or 24)
-        _write_via_temp(
-            frames_path, lambda p: encode_frames_ffv1(p, payload, fps=fps)
-        )
-        _drop_legacy_frames(root, idx, first_pass=False)
+        _store_segment_frames(root, idx, payload, first_pass=False, plan=plan)
         text = json.dumps(fp, ensure_ascii=False, sort_keys=True)
         _write_via_temp(
             meta_path,
@@ -884,7 +915,6 @@ def save_first_pass_cache(
     idx = seg.index
     meta_path = root / f"seg_{idx:04d}.pre.meta.json"
     latent_path = root / f"seg_{idx:04d}.pre.av.pt"
-    frames_path = _frames_path(root, idx, first_pass=True)
     handoff_path = root / f"seg_{idx:04d}.pre.handoff.json"
     low_path = root / f"seg_{idx:04d}.pre.low.pt"
     try:
@@ -902,11 +932,7 @@ def save_first_pass_cache(
             )
         if isinstance(frames, torch.Tensor) and frames.numel() > 0:
             payload = _frames_to_disk(frames)
-            fps = float(getattr(plan, "frame_rate", 24) or 24)
-            _write_via_temp(
-                frames_path, lambda p: encode_frames_ffv1(p, payload, fps=fps)
-            )
-            _drop_legacy_frames(root, idx, first_pass=True)
+            _store_segment_frames(root, idx, payload, first_pass=True, plan=plan)
         if isinstance(low_carry, dict) and "samples" in low_carry:
             cpu_low = _av_latent_to_cpu(low_carry)
             _write_via_temp(low_path, lambda p: torch.save(cpu_low, p))
