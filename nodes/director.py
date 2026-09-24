@@ -241,7 +241,7 @@ class MiniMaxH3Director:
 
         return first_pass_cache_disk_signature(unique_id)
 
-    RETURN_TYPES = ("IMAGE", "AUDIO", "FLOAT", "INT", "IMAGE", "STRING", "IMAGE", "IMAGE")
+    RETURN_TYPES = ("IMAGE", "AUDIO", "FLOAT", "INT", "IMAGE", "STRING", "IMAGE", "IMAGE", "INT", "INT")
     RETURN_NAMES = (
         "images",
         "audio",
@@ -251,8 +251,10 @@ class MiniMaxH3Director:
         "report",
         "images_pre_refine",
         "images_pre_face_refine",
+        "source_width",
+        "source_height",
     )
-    OUTPUT_IS_LIST = (True, True, False, False, True, False, True, True)
+    OUTPUT_IS_LIST = (True, True, False, False, True, False, True, True, False, False)
     FUNCTION = "execute"
     CATEGORY = _CATEGORY
     DESCRIPTION = (
@@ -354,7 +356,7 @@ class MiniMaxH3Director:
                 )
             )
 
-            return finalize_director_outputs(
+            outputs = finalize_director_outputs(
                 plan,
                 combined,
                 segment_outputs,
@@ -368,6 +370,11 @@ class MiniMaxH3Director:
                 pre_face_segments=pre_face_segments,
                 export_pre_face_refine=export_pre_face_refine,
                 block_final_images=held_for_confirmation,
+            )
+            return (
+                *outputs,
+                int(plan.source_width or plan.width),
+                int(plan.source_height or plan.height),
             )
         finally:
             # Full source/reference PCM is execution-scoped.

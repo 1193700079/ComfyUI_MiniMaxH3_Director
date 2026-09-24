@@ -8533,7 +8533,32 @@ class MiniMaxH3DirectorEditor {
 
     async _applyLoadedVideo({ fileName, relPath, subfolder, type, statusPrefix }) {
         const prep = await this._prepareVideoFrames({ fileName, relPath, subfolder, type, statusPrefix });
-        const { totalFrames, store, viewUrl } = prep;
+        const { totalFrames, viewUrl } = prep;
+
+        // V2V/RV2V should inherit the uploaded video's timing and canvas instead
+        // of keeping the template's 24 fps / 864x480 defaults. MiniMax samples
+        // on a 32-aligned canvas; the workflow's final ImageScale restores the
+        // exact source dimensions for the encoded file.
+        const sourceW = Math.max(1, Number(prep.meta?.width || prep.store?.width || 0));
+        const sourceH = Math.max(1, Number(prep.meta?.height || prep.store?.height || 0));
+        const store = resolveOutputDimensions(sourceW, sourceH, {
+            mode: "long_edge",
+            longEdge: Math.max(sourceW, sourceH),
+        });
+        prep.store = store;
+        this.timeline.output = {
+            ...(this.timeline.output || {}),
+            mode: "long_edge",
+            longEdge: Math.max(sourceW, sourceH),
+            width: store.width,
+            height: store.height,
+            audioMode: "source",
+            maxExportFrames: 0,
+            exportMode: "all",
+        };
+        this.timeline.width = store.width;
+        this.timeline.height = store.height;
+        this.timeline.refMaxSize = store.refMaxSize;
 
         this._storageWidth = store.width;
         this._storageHeight = store.height;
@@ -13158,4 +13183,3 @@ app.registerExtension({
         };
     },
 });
-
